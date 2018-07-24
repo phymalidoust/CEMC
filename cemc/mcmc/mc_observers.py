@@ -290,21 +290,25 @@ class NetworkObserver( MCObserver ):
         of cluster sizes
     :param mpicomm: MPI communicator
     """
-    def __init__( self, calc=None, cluster_name=None, element=None, nbins=30, mpicomm=None ):
-        if ( calc is None ):
-            raise ValueError( "No calculator given. Has to be a CE calculator (with C++ support)" )
-        if ( cluster_name is None ):
-            raise ValueError( "No cluster name given!" )
-        if ( element is None ):
-            raise ValueError( "No element given!" )
-        self.fast_cluster_tracker = ce_updater.ClusterTracker( calc.updater, cluster_name, element )
-        super(NetworkObserver,self).__init__()
+    def __init__( self, calc=None, cluster_name=None, element=None,
+                  nbins=30, mpicomm=None):
+        if calc is None:
+            msg = "No calculator given. "
+            msg += "Has to be a CE calculator (with C++ support)"
+            raise ValueError(msg)
+        if cluster_name is None:
+            raise ValueError("No cluster name given!")
+        if element is None:
+            raise ValueError("No element given!")
+        self.fast_cluster_tracker = ce_updater.ClusterTracker(
+            calc.updater, cluster_name, element)
+        super(NetworkObserver, self).__init__()
         self.name = "NetworkObserver"
         self.calc = calc
         self.res = {
-            "avg_size":0.0,
-            "avg_size_sq":0.0,
-            "number_of_clusters":0
+            "avg_size": 0.0,
+            "avg_size_sq": 0.0,
+            "number_of_clusters": 0
         }
         self.max_size = 0
         self.indx_max_cluster = []
@@ -316,39 +320,39 @@ class NetworkObserver( MCObserver ):
         # Count the number of atoms of the element type being tracked
         n_atoms = 0
         for atom in self.calc.atoms:
-            if ( atom.symbol == element ):
+            if atom.symbol == element:
                 n_atoms += 1
         self.max_size_hist = n_atoms
         self.num_clusters = 0
         self.nbins = nbins
-        self.size_histogram = np.zeros( self.nbins )
+        self.size_histogram = np.zeros(self.nbins)
 
-    def __call__( self, system_changes ):
+    def __call__(self, system_changes):
         self.n_calls += 1
         self.fast_cluster_tracker.find_clusters()
         new_res = self.fast_cluster_tracker.get_cluster_statistics_python()
         for key in self.res.keys():
             self.res[key] += new_res[key]
 
-        self.update_histogram( new_res["cluster_sizes"])
-        self.n_atoms_in_cluster += np.sum( new_res["cluster_sizes"] )
-        if ( new_res["max_size"] > self.max_size ):
+        self.update_histogram(new_res["cluster_sizes"])
+        self.n_atoms_in_cluster += np.sum(new_res["cluster_sizes"])
+        if new_res["max_size"] > self.max_size:
             self.max_size = new_res["max_size"]
             self.atoms_max_cluster = self.calc.atoms.copy()
             clust_indx = self.fast_cluster_tracker.atomic_clusters2group_indx_python()
             self.indx_max_cluster = clust_indx
             self.num_clusters = len(new_res["cluster_sizes"])
 
-    def update_histogram( self, sizes ):
+    def update_histogram(self, sizes):
         """
         Updates the histogram
 
         :param sizes: Cluster sizes
         """
         for size in sizes:
-            if ( size >= self.max_size_hist ):
+            if size >= self.max_size_hist:
                 continue
-            indx = int( self.nbins*float(size)/self.max_size_hist )
+            indx = int(self.nbins*float(size)/self.max_size_hist)
             self.size_histogram[indx] += 1
 
     def reset(self):
@@ -365,54 +369,57 @@ class NetworkObserver( MCObserver ):
         self.n_atoms_in_cluster = 0
         self.num_clusters = 0
 
-    def get_atoms_with_largest_cluster( self, prohibited_symbols=[] ):
+    def get_atoms_with_largest_cluster(self, prohibited_symbols=[]):
         """
-        Returns the atoms object which had the largest cluster and change the element
+        Returns the atoms object which had the largest cluster.
+
+        Change the element
         of the atoms in the cluster to *highlight_element*
         """
-        if ( self.atoms_max_cluster is None ):
-            print ("No clusters was detected!")
+        if self.atoms_max_cluster is None:
+            print("No clusters was detected!")
             return None
-        explored_grp_indices = []
-        largest_cluster = []
         group_indx_count = self.get_cluster_count()
 
         elems_in_atoms_obj = []
         for atom in self.atoms_max_cluster:
-            if ( atom.symbol not in elems_in_atoms_obj ):
-                elems_in_atoms_obj.append( atom.symbol )
+            if atom.symbol not in elems_in_atoms_obj:
+                elems_in_atoms_obj.append(atom.symbol)
 
         current_highlight_element = 0
-        high_elms = self.generate_highlight_elements_from_size(group_indx_count,prohibited_symbols)
-        for key,value in group_indx_count.items():
-            if ( value <= 3 ):
+        high_elms = self.generate_highlight_elements_from_size(
+            group_indx_count, prohibited_symbols)
+
+        for key, value in group_indx_count.items():
+            if value <= 3:
                 continue
-            for i,indx in enumerate(self.indx_max_cluster):
-                if ( indx == key ):
+            for i, indx in enumerate(self.indx_max_cluster):
+                if indx == key:
                     self.atoms_max_cluster[i].symbol = high_elms[key]
             current_highlight_element += 1
         return self.atoms_max_cluster
 
-    def generate_highlight_elements_from_size( self, group_indx_count, prohibited_symbols ):
+    def generate_highlight_elements_from_size(
+            self, group_indx_count, prohibited_symbols):
         """
         Create list of highlight elements based on the group index count
         """
         tup = []
-        for key,value in group_indx_count.items():
-            if ( value <= 3 ):
+        for key, value in group_indx_count.items():
+            if value <= 3:
                 continue
-            tup.append( (value,key) )
+            tup.append((value,key))
 
         tup.sort()
         tup = tup[::-1]
         max_n_elems = len(highlight_elements)
-        highlist = {clst[1]:highlight_elements[i%max_n_elems] for i,clst in enumerate(tup)}
+        highlist = {clst[1]: highlight_elements[i % max_n_elems] for i, clst in enumerate(tup)}
         highlist = {}
         counter = 0
         for clst in tup:
-            while ( highlight_elements[counter] in prohibited_symbols ):
+            while highlight_elements[counter] in prohibited_symbols:
                 counter += 1
-            highlist[clst[1]] = highlight_elements[counter%max_n_elems]
+            highlist[clst[1]] = highlight_elements[counter % max_n_elems]
         return highlist
 
     def get_cluster_count(self):
@@ -421,7 +428,7 @@ class NetworkObserver( MCObserver ):
         """
         group_indx_count = {}
         for indx in self.indx_max_cluster:
-            if ( indx in group_indx_count.keys() ):
+            if indx in group_indx_count.keys():
                 group_indx_count[indx] += 1
             else:
                 group_indx_count[indx] = 1
@@ -434,34 +441,34 @@ class NetworkObserver( MCObserver ):
         group_indx_count = self.get_cluster_count()
         max_id = 0
         max_size = 0
-        for key,value in group_indx_count.items():
-            if ( value > max_size ):
+        for key, value in group_indx_count.items():
+            if value > max_size:
                 max_size = value
                 max_id = key
-        return [i for i,indx in enumerate(self.indx_max_cluster) if ( indx==max_id)]
+        return [i for i, indx in enumerate(self.indx_max_cluster) if indx == max_id]
 
-    def collect_stat_MPI( self ):
+    def collect_stat_MPI(self):
         """
         Collects the statistics from MPI
         """
-        if ( self.mpicomm is None ):
+        if self.mpicomm is None:
             return
         recv_buf = np.zeros_like(self.size_histogram)
-        self.mpicomm.Allreduce( self.size_histogram, recv_buf, op=MPI.SUM )
+        self.mpicomm.Allreduce(self.size_histogram, recv_buf, op=MPI.SUM)
         self.size_histogram[:] = recv_buf[:]
 
         # Find the maximum cluster
-        max_size = self.mpicomm.gather(self.max_size,root=0)
+        max_size = self.mpicomm.gather(self.max_size, root=0)
         rank = self.mpicomm.Get_rank()
-        if ( rank == 0 ):
+        if rank == 0:
             self.max_size = np.max(max_size)
-        self.max_size = self.mpicomm.bcast(self.max_size,root=0)
+        self.max_size = self.mpicomm.bcast(self.max_size, root=0)
 
-        if ( rank == 0 ):
+        if rank == 0:
             msg = "Waring! The MPI collection of results for the NetworkObserver is incomplete."
             msg += "The histogram is correctly collected and the maximum cluster size."
             msg += "Entries received by get_statisttics() is not collected yet."
-            print (msg)
+            print(msg)
 
     def get_statistics(self):
         """
@@ -469,30 +476,33 @@ class NetworkObserver( MCObserver ):
         """
         self.collect_stat_MPI()
         stat = {}
-        if ( self.res["number_of_clusters"] == 0 ):
+        if self.res["number_of_clusters"] == 0:
             stat["avg_size"] = 0
-            avg_sq =  0
+            avg_sq = 0
         else:
-            stat["avg_size"] = self.res["avg_size"]/self.res["number_of_clusters"]
+            stat["avg_size"] = self.res["avg_size"] / \
+                self.res["number_of_clusters"]
             avg_sq = self.res["avg_size_sq"]/self.res["number_of_clusters"]
-        stat["std"] = np.sqrt( avg_sq - stat["avg_size"]**2 )
+        stat["std"] = np.sqrt(avg_sq - stat["avg_size"]**2)
         stat["max_size"] = self.max_size
         stat["n_atoms_in_cluster"] = self.n_atoms_in_cluster
         stat["number_of_clusters"] = int(self.res["number_of_clusters"])
-        if ( self.max_size_hist == 0 ):
+        if self.max_size_hist == 0:
             stat["frac_atoms_in_cluster"] = 0.0
         else:
-            stat["frac_atoms_in_cluster"] = float(self.n_atoms_in_cluster)/(self.n_calls*self.max_size_hist)
+            stat["frac_atoms_in_cluster"] = \
+                float(self.n_atoms_in_cluster) / \
+                (self.n_calls * self.max_size_hist)
         return stat
 
     def get_size_histogram(self):
         """
         Returns the size histogram and the corresponding size
         """
-        x = np.linspace(3,self.max_size_hist,self.nbins)
-        return x,self.size_histogram
+        x = np.linspace(3, self.max_size_hist, self.nbins)
+        return x, self.size_histogram
 
-    def grow_cluster(self,size):
+    def grow_cluster(self, size):
         """
         Grow a cluster of the given size
 
@@ -505,3 +515,32 @@ class NetworkObserver( MCObserver ):
         Computes the surface of a cluster
         """
         return self.fast_cluster_tracker.surface_python()
+
+    def _tag_atoms(self):
+        """Add a tag to the atoms object to track their original index."""
+        for atom in self.calc.atoms:
+            atom.tag = atom.index
+
+    def triangulate_clusters(self, cluster):
+        """Create a triangulated representation of the points."""
+        from scipy.spatial import Delaunay
+        self.fast_cluster_tracker.find_clusters()
+        grp = self.fast_cluster_tracker.atomic_clusters2group_indx_python()
+        already_explored_groups = []
+        self._tag_atoms()
+        for i, indx in enumerate(grp):
+            if indx == -1 or indx in already_explored_groups:
+                continue
+
+            already_explored_groups.append(indx)
+
+            # If the index is not -1 then this atom belonds to a cluster
+            indices = get_indices_of_in_cluster(grp, indx)
+            atoms = self.calc.atoms[indices]
+            pos = atoms.get_positions()
+            delaunay = Delaunay(pos)
+
+# Helper functions
+def get_indices_of_in_cluster(grp_indx, grp):
+    indx = np.array(range(len(grp_indx)))
+    return indx[grp_indx == grp]
