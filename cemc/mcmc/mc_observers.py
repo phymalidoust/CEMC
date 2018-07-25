@@ -408,7 +408,7 @@ class NetworkObserver( MCObserver ):
         for key, value in group_indx_count.items():
             if value <= 3:
                 continue
-            tup.append((value,key))
+            tup.append((value, key))
 
         tup.sort()
         tup = tup[::-1]
@@ -521,24 +521,23 @@ class NetworkObserver( MCObserver ):
         for atom in self.calc.atoms:
             atom.tag = atom.index
 
-    def triangulate_clusters(self, cluster):
+    def cluster_members(self):
         """Create a triangulated representation of the points."""
-        from scipy.spatial import Delaunay
         self.fast_cluster_tracker.find_clusters()
-        grp = self.fast_cluster_tracker.atomic_clusters2group_indx_python()
-        already_explored_groups = []
-        self._tag_atoms()
-        for i, indx in enumerate(grp):
-            if indx == -1 or indx in already_explored_groups:
+        self.indx_max_cluster = \
+            self.fast_cluster_tracker.atomic_clusters2group_indx_python()
+        count = self.get_cluster_count()
+        result = {}
+        for i, grp_id in enumerate(self.indx_max_cluster):
+            if count[grp_id] <= 3:
                 continue
 
-            already_explored_groups.append(indx)
+            if grp_id not in result.keys():
+                result[grp_id] = [i]
+            else:
+                result[grp_id].append(i)
+        return result
 
-            # If the index is not -1 then this atom belonds to a cluster
-            indices = get_indices_of_in_cluster(grp, indx)
-            atoms = self.calc.atoms[indices]
-            pos = atoms.get_positions()
-            delaunay = Delaunay(pos)
 
 # Helper functions
 def get_indices_of_in_cluster(grp_indx, grp):
