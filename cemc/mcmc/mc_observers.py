@@ -544,6 +544,7 @@ def get_indices_of_in_cluster(grp_indx, grp):
     indx = np.array(range(len(grp_indx)))
     return indx[grp_indx == grp]
 
+
 class SiteOrderParameter(MCObserver):
     """
     Class that can be used to detect phase transitions.
