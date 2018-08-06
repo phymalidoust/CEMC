@@ -58,6 +58,7 @@ class PhaseBoundaryTracker(object):
         self._max_singlet_change = max_singlet_change
         self._backupfile = backupfile
         self._sgc_obj = None
+        self._integration_direction = "increasing"
 
         if os.path.exists(self._backupfile):
             os.remove(self._backupfile)
@@ -124,6 +125,30 @@ class PhaseBoundaryTracker(object):
                 self._logger.info(msg)
             elif mode == "warning":
                 self._logger.warning(msg)
+
+    def _set_integration_direction(self, T0, Tend):
+        """Sets the integration direction."""
+        if Tend is None:
+            # Use the default which is increasing from 0K
+            return
+        if T0 > Tend:
+            self._integration_direction = "decreasing"
+        else:
+            self._integration_direction = "increasing"
+
+    def _reached_temperature_end_point(self, T, Tend):
+        """Returns true if we reached the temperature end point."""
+        if Tend is None:
+            # End point not give
+            return False
+
+        if self._integration_direction == "increasing":
+            if T > Tend:
+                return True
+        elif self._integration_direction == "decreasing":
+            if T < Tend:
+                return True
+        return False
 
     def _backup(self, data, dsetname="data"):
         """
@@ -297,13 +322,14 @@ class PhaseBoundaryTracker(object):
                     return False
         return True
 
-
     def _step(self, temperature, mc_args):
         """
         Perform one ODE step
         """
-        self._log("Current temperature {}K. Current chemical_potential:" \
-            " {} eV/atom".format(int(temperature), mc_args["chem_potential"]))
+        self._log("Current temperature {}K. Current chemical_potential:"
+                  " {} eV/atom".format(
+                    int(temperature), mc_args["chem_potential"]))
+
         thermo = []
         for i, sgc in enumerate(self._sgc_obj):
             self._log("Running MC for system {}".format(i))
@@ -331,7 +357,9 @@ class PhaseBoundaryTracker(object):
             min_step=1,
             stepsize=100,
             mc_args=None,
-            symbols=None):
+            symbols=None,
+            init_mu=None,
+            Tend=None):
         """
         Solve the differential equation using adaptive euler
 
@@ -340,14 +368,23 @@ class PhaseBoundaryTracker(object):
         :param stepsize: Initial stepsize in kelving
         :param mc_args: Dictionary of arguments for the MC samplers.
             See :py:meth:`cemc.mcmc.SGCMonteCarlo.runMC`
+        :param init_mu: Initial chemical potential
+        :param Tend: Temperature at which to stop the integration
         """
+        self._set_integration_direction(init_temp, Tend)
         if mc_args is None:
             mc_args = {}
 
         if symbols is None:
             raise ValueError("No symbols given!")
 
-        chem_pot = self._get_init_chem_pot()
+        if init_mu is None:
+            # Estimate the initial chemical potential from the
+            # zero kelvin limit
+            chem_pot = self._get_init_chem_pot()
+        else:
+            # Use the user provided chemical potential is initial value
+            chem_pot = np.array(init_mu)
         if COMM.Get_size() > 1:
             mpicomm = COMM
         else:
@@ -371,7 +408,7 @@ class PhaseBoundaryTracker(object):
         eps = self._max_singlet_change / 2.0
         ode_solution = PhaseBoundarySolution()
 
-        while stepsize > min_step:
+        while abs(stepsize) > min_step:
             mc_args["chem_potential"] = self._get_chem_pot_dict(chem_pot)
             beta = 1.0 / (kB * temperature)
             thermo = self._step(temperature, mc_args)
@@ -385,6 +422,9 @@ class PhaseBoundaryTracker(object):
             ref_values, images = self._predict(ode_solution, thermo)
             one_system_changed_phase = self._one_system_changed_phase(thermo, ref_values)
             match = self._prediction_match(thermo, ref_values, eps=eps)
+            if ode_solution.singlets:
+                small_change_since_last = self._prediction_match(thermo, ode_solution.singlets[-1])
+                match = match or small_change_since_last
             converged = match and not comp_swapped and not one_system_changed_phase
 
             if converged:
@@ -424,7 +464,10 @@ class PhaseBoundaryTracker(object):
             chem_pot += rhs * dbeta
 
             # Append the last step to the array
-            if delta_temp <= min_step:
+            if abs(delta_temp) <= min_step:
+                ode_solution.append(singlet_array, temperature, chem_pot)
+                break
+            elif self._reached_temperature_end_point(temperature, Tend):
                 ode_solution.append(singlet_array, temperature, chem_pot)
                 break
             is_first = False
@@ -498,6 +541,14 @@ def predict_composition(
     # the first.
     # Impact of the first point is exp(-2) relative to the impact of the
     # last point
+    sign = 1
+    if temperatures[1] < temperatures[0]:
+        # We have to revert the arrays
+        temperatures = temperatures[::-1]
+        comp = comp[::-1]
+        weights = weights[::-1]
+        sign = -1
+
     spl = UnivariateSpline(temperatures, comp, k=k, w=weights, s=smoothing)
     predicted_comp = spl(target_temp)
 
@@ -513,7 +564,7 @@ def predict_composition(
             marker='^',
             color="black",
             label="History")
-        temp_lin_space = np.linspace(np.min(temperatures), target_temp + 40, 100)
+        temp_lin_space = np.linspace(np.min(temperatures), target_temp + sign*40, 100)
         pred = spl(temp_lin_space)
         axis.plot(temp_lin_space, pred, "--", label="Spline")
         axis.plot([target_temp], [target_comp], 'x', label="Computed")

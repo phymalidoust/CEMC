@@ -4,7 +4,7 @@ from ase.ce import BulkCrystal, BulkSpacegroup
 from cemc.mcmc import SimulatedAnnealingCanonical
 from ase.calculators.singlepoint import SinglePointCalculator
 import pickle as pck
-from cemc.wanglandau import wang_landau_db_manager as wldbm
+from cemc.wanglandau.wang_landau_db_manager import WangLandauDBManager
 import copy
 
 class AtomExistsError(Exception):
@@ -32,8 +32,10 @@ class WangLandauInit(object):
 
         if ( cetype == "BulkCrystal" ):
             small_bc = BulkCrystal(**bc_kwargs )
+            small_bc.reconfigure_settings()
         elif( ctype == "BulkSpacegroup" ):
             small_bc = BulkSpacegroup(**bc_kwargs)
+            small_bc.reconfigure_settings()
 
         self._check_eci(small_bc,eci)
 
@@ -67,17 +69,13 @@ class WangLandauInit(object):
         """
         Verify that all ECIs corresponds to a cluster
         """
-        cnames = copy.deepcopy(bc.cluster_names)
-        flattened = []
-        for sublist in cnames:
-            for subsub in sublist:
-                    flattened += subsub
+        cnames = copy.deepcopy(bc.cluster_family_names)
 
         for key in eci.keys():
             if (key.startswith("c0") or key.startswith("c1")):
                 continue
             name = key.rpartition("_")[0]
-            if name not in flattened:
+            if name not in cnames:
                 raise ValueError("There are ECIs that does not fit a cluster. ECIs: {}, Cluster names: {}".format(eci,flattened))
 
     def _find_energy_range( self, atoms, T, nsteps_per_temp ):
@@ -99,7 +97,7 @@ class WangLandauInit(object):
         """
         Prepares a Wang Landau run
         """
-        manager = wldbm.WangLandauDBManager( self.wl_db_name )
+        manager = WangLandauDBManager( self.wl_db_name )
         print (manager)
         db = connect( self.wl_db_name )
         atomID = db.get( select_cond ).id
@@ -160,8 +158,10 @@ class WangLandauInit(object):
             cetype = row.key_value_pairs["cetype"]
             if ( cetype == "BulkCrystal" ):
                 small_bc = BulkCrystal( **bc_kwargs )
+                small_bc.reconfigure_settings()
             else:
                 small_bc = BulkSpacegroup( **bc_kwargs )
+                small_bc.reconfigure_settings()
             size = row.data["supercell_size"]
             calc = get_ce_calc( small_bc, bc_kwargs, eci=eci, size=size )
 

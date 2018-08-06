@@ -35,6 +35,7 @@ MCMC
   sgc_free_energy_barrier
   fixednuc_mc
   nucleation_barrier
+  monte_carlo_constraints
 
 Tools
 =======
@@ -44,3 +45,5 @@ Tools
   phase_boundary_tracker
   gs_finder
   free_energy_canonical
+  dataset_averager
+  peak_extractor
